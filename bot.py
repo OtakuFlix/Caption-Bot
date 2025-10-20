@@ -1,6 +1,8 @@
 import os
 import re
 import asyncio
+import socket
+import threading
 from telethon import TelegramClient, events
 from telethon.tl.functions.channels import JoinChannelRequest
 from telethon.errors import FloodWaitError, AuthKeyUnregisteredError, UserDeactivatedBanError, ChannelPrivateError
@@ -36,6 +38,29 @@ class UserState:
         self.end_link = None
         self.name = None
         self.current_session_index = 0
+
+def run_tcp_health_check():
+    """Simple TCP server for Koyeb health checks"""
+    host = '0.0.0.0'
+    port = 8000  # Koyeb default health check port
+    
+    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    
+    try:
+        server_socket.bind((host, port))
+        server_socket.listen(5)
+        logging.info(f"✅ TCP Health check server running on port {port}")
+        
+        while True:
+            client_socket, address = server_socket.accept()
+            # Simply accept and close connection - Koyeb just needs to connect
+            client_socket.close()
+            
+    except Exception as e:
+        logging.error(f"TCP health check error: {e}")
+    finally:
+        server_socket.close()
 
 def extract_episode(caption):
     """Extract episode number from caption"""
@@ -253,8 +278,6 @@ async def join_channel_if_needed(client, channel_id):
         
         try:
             # Try to join the channel
-            # For private channels, we need the invite link
-            # For public channels, we can join directly
             await client(JoinChannelRequest(channel_id))
             logging.info(f"Successfully joined channel {channel_id}")
             return True
@@ -480,48 +503,15 @@ async def ping_self(bot):
         except Exception as e:
             logging.error(f"Error in ping_self: {e}")
             await asyncio.sleep(300)  # Wait 5 minutes and retry
-    """Load all session files from sessions directory"""
-    global session_clients
-    
-    # Create sessions directory if it doesn't exist
-    os.makedirs(SESSIONS_DIR, exist_ok=True)
-    
-    # Find all .session files
-    session_files = glob.glob(os.path.join(SESSIONS_DIR, '*.session'))
-    
-    if not session_files:
-        logging.warning(f"No session files found in '{SESSIONS_DIR}' directory!")
-        logging.info(f"Please add session files (e.g., session1.session, session2.session) to the '{SESSIONS_DIR}' directory")
-        return
-    
-    logging.info(f"Found {len(session_files)} session file(s)")
-    
-    for session_file in session_files:
-        try:
-            # Get session name without extension
-            session_name = session_file.replace('.session', '')
-            
-            # Create and start client
-            client = TelegramClient(session_name, API_ID, API_HASH)
-            await client.start()
-            
-            # Verify session is valid
-            me = await client.get_me()
-            session_clients.append(client)
-            
-            logging.info(f"✅ Loaded session: {os.path.basename(session_name)} ({me.first_name} {me.last_name or ''})")
-            
-        except Exception as e:
-            logging.error(f"❌ Failed to load session {os.path.basename(session_file)}: {e}")
-    
-    if session_clients:
-        logging.info(f"Successfully loaded {len(session_clients)} session(s)")
-    else:
-        logging.error("No valid sessions loaded! Bot may not function properly.")
 
 async def main():
     """Main function to keep the bot running"""
     global bot_id
+    
+    # Start TCP health check server in background thread
+    health_thread = threading.Thread(target=run_tcp_health_check, daemon=True)
+    health_thread.start()
+    logging.info("🏥 TCP health check server started on port 8000")
     
     # Initialize bot
     bot = TelegramClient('bot', API_ID, API_HASH)
@@ -556,6 +546,7 @@ async def main():
     
     logging.info("✅ Bot is now running with anti-sleep protection...")
     logging.info("💓 Heartbeat every 5 minutes | 🏓 Ping every 30 minutes")
+    logging.info("🏥 TCP health check available on port 8000")
     
     # Keep running
     await bot.run_until_disconnected()
