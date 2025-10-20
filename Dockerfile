@@ -27,5 +27,8 @@ RUN mkdir -p downloads
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
 
+# Expose health check port
+EXPOSE 8000
+
 # Run the bot
 CMD ["python", "bot.py"]
