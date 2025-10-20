@@ -1,7 +1,6 @@
 import os
 import re
 import asyncio
-import socket
 import threading
 from telethon import TelegramClient, events
 from telethon.tl.functions.channels import JoinChannelRequest
@@ -10,6 +9,8 @@ from dotenv import load_dotenv
 import logging
 import glob
 from datetime import datetime
+from fastapi import FastAPI
+import uvicorn
 
 # Load environment variables
 load_dotenv()
@@ -39,28 +40,29 @@ class UserState:
         self.name = None
         self.current_session_index = 0
 
-def run_tcp_health_check():
-    """Simple TCP server for Koyeb health checks"""
-    host = '0.0.0.0'
-    port = 8000  # Koyeb default health check port
-    
-    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    
-    try:
-        server_socket.bind((host, port))
-        server_socket.listen(5)
-        logging.info(f"✅ TCP Health check server running on port {port}")
-        
-        while True:
-            client_socket, address = server_socket.accept()
-            # Simply accept and close connection - Koyeb just needs to connect
-            client_socket.close()
-            
-    except Exception as e:
-        logging.error(f"TCP health check error: {e}")
-    finally:
-        server_socket.close()
+# Create FastAPI app for health checks
+health_app = FastAPI()
+
+@health_app.get("/")
+async def root():
+    return {
+        "status": "running",
+        "bot": "connected",
+        "sessions": len(session_clients),
+        "time": datetime.now().isoformat()
+    }
+
+@health_app.get("/health")
+async def health():
+    return {
+        "status": "healthy",
+        "sessions": len(session_clients),
+        "bot_connected": True
+    }
+
+def run_health_server():
+    """Run FastAPI server for Koyeb health checks"""
+    uvicorn.run(health_app, host="0.0.0.0", port=8000, log_level="error")
 
 def extract_episode(caption):
     """Extract episode number from caption"""
@@ -483,7 +485,7 @@ async def keep_alive():
                         logging.error(f"❌ Failed to reconnect session {i+1}: {e}")
             
             # Wait 5 minutes before next heartbeat
-            await asyncio.sleep(200)  # 300 seconds = 5 minutes
+            await asyncio.sleep(300)  # 300 seconds = 5 minutes
             
         except Exception as e:
             logging.error(f"Error in keep_alive: {e}")
@@ -502,16 +504,16 @@ async def ping_self(bot):
             
         except Exception as e:
             logging.error(f"Error in ping_self: {e}")
-            await asyncio.sleep(200)  # Wait 5 minutes and retry
+            await asyncio.sleep(300)  # Wait 5 minutes and retry
 
 async def main():
     """Main function to keep the bot running"""
     global bot_id
     
-    # Start TCP health check server in background thread
-    health_thread = threading.Thread(target=run_tcp_health_check, daemon=True)
+    # Start HTTP health check server in background thread
+    health_thread = threading.Thread(target=run_health_server, daemon=True)
     health_thread.start()
-    logging.info("🏥 TCP health check server started on port 8000")
+    logging.info("🏥 HTTP health check server started on port 8000")
     
     # Initialize bot
     bot = TelegramClient('bot', API_ID, API_HASH)
@@ -546,7 +548,7 @@ async def main():
     
     logging.info("✅ Bot is now running with anti-sleep protection...")
     logging.info("💓 Heartbeat every 5 minutes | 🏓 Ping every 30 minutes")
-    logging.info("🏥 TCP health check available on port 8000")
+    logging.info("🏥 HTTP health check available on port 8000")
     
     # Keep running
     await bot.run_until_disconnected()
