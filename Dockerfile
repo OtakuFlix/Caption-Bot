@@ -18,6 +18,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy bot files
 COPY bot.py .
 
+# Copy session files
+COPY sessions/ ./sessions/
+
 # Create downloads directory
 RUN mkdir -p downloads
 
