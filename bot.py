@@ -483,7 +483,7 @@ async def keep_alive():
                         logging.error(f"❌ Failed to reconnect session {i+1}: {e}")
             
             # Wait 5 minutes before next heartbeat
-            await asyncio.sleep(300)  # 300 seconds = 5 minutes
+            await asyncio.sleep(200)  # 300 seconds = 5 minutes
             
         except Exception as e:
             logging.error(f"Error in keep_alive: {e}")
@@ -502,7 +502,7 @@ async def ping_self(bot):
             
         except Exception as e:
             logging.error(f"Error in ping_self: {e}")
-            await asyncio.sleep(300)  # Wait 5 minutes and retry
+            await asyncio.sleep(200)  # Wait 5 minutes and retry
 
 async def main():
     """Main function to keep the bot running"""
